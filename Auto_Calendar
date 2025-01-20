@@ -1,0 +1,61 @@
+let
+  // Credit to Access Analytic on YouTube for a base template that has been very handy over the years
+  // I have added a few extra columns to aid some time based DAX calculations, it'd be a shame for this not to be shared somewhere
+  Today = Date.From(DateTime.LocalNow() ),
+  // Change start date to beginning of desired year
+  StartDate = #date(2024, 1, 1),
+  YearsInFuture = 0,
+  EndDate = Date.EndOfYear(Date.AddYears(Today,YearsInFuture )),
+  // set this as the last month number of your fiscal year : June = 6, July =7 etc   use 0 if FY not required
+  MonthNumberForEndFinancialYear = 6,
+  // Change to Day.Sunday or Day.Tuesday etc to impact the sort order number so you can then display your days in your visuals in the preferred way
+  FirstDayOfWeek = Day.Monday,
+  DateList = {Number.From(StartDate)..Number.From(EndDate)},
+  #"Converted to Table" = Table.FromList(DateList, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+  #"Named as Date" = Table.RenameColumns(#"Converted to Table", {{"Column1", "Date"}}),
+  #"Changed Type" = Table.TransformColumnTypes(#"Named as Date", {{"Date", type date}}),
+  #"Inserted Year" = Table.AddColumn(#"Changed Type", "Year", each Date.Year([Date]), type number),
+  #"Inserted Month Number" = Table.AddColumn(#"Inserted Year", "Month Number", each Date.Month([Date]), type number),
+  #"Inserted Month Name" = Table.AddColumn(#"Inserted Month Number", "Month", each Text.Start(Date.MonthName([Date]),3), type text),
+  #"Inserted Week Number" = Table.AddColumn(#"Inserted Month Name", "WeekNum", each Date.WeekOfYear([Date]), type number),
+  #"Inserted Week Commencing" = Table.AddColumn(#"Inserted Week Number", "Week Commencing", each Date.StartOfWeek([Date]), type date),
+  #"Inserted Week Ending" = Table.AddColumn(#"Inserted Week Commencing", "Week Ending", each Date.EndOfWeek([Date]), type date),
+  #"Inserted Day Name" = Table.AddColumn(#"Inserted Week Ending", "Day", each Text.Start( Date.DayOfWeekName([Date]),3), type text),
+  #"Inserted Day of Week (num)" = Table.AddColumn(#"Inserted Day Name", "Day of Week", each Date.DayOfWeek([Date], FirstDayOfWeek), type number),
+  #"Inserted Workday (True/False)" = Table.AddColumn(#"Inserted Day of Week (num)", "Workday", each if [Day of Week] >= 5 then "FALSE" else "TRUE", type logical),
+  #"Inserted Quarter Number" = Table.AddColumn(#"Inserted Workday (True/False)", "Quarter", each Date.QuarterOfYear([Date]), type number),
+  #"Changed Type2" = Table.TransformColumnTypes(#"Inserted Quarter Number", {{"Quarter", type text}, {"Year", type text}}),
+  #"Added Quarter Name" = Table.AddColumn(#"Changed Type2", "Custom", each "Q" & [Quarter], type text),
+  #"Removed Quarter Name" = Table.RemoveColumns(#"Added Quarter Name", {"Quarter"}),
+  #"Renamed Columns" = Table.RenameColumns(#"Removed Quarter Name", {{"Custom", "Quarter"}}),
+  #"Changed Type3" = Table.TransformColumnTypes(#"Renamed Columns", {{"Quarter", type text}}),
+  #"Added YYQQ" = Table.AddColumn(#"Changed Type3", "YY-QQ", each Text.End( [Year],2) & "-"& [Quarter]),
+  #"Changed Type4" = Table.TransformColumnTypes(#"Added YYQQ", {{"YY-QQ", type text}, {"Year", Int64.Type}}),
+  #"Renamed SortByCols" = Table.RenameColumns(#"Changed Type4", {{"Month Number", "SortBy Month Number"}, {"Day of Week", "SortBy Day of Week"}}),
+  #"▶ DatesSinceTodayFields" = #"Renamed SortByCols",
+  DateToday = Today,
+  DaysAgo = Table.AddColumn(#"▶ DatesSinceTodayFields", "Days Since Today", each Duration.Days([Date] -  DateToday), Int64.Type),
+  Custom = Table.AddColumn(DaysAgo, "Weeks Since Today", each ((Number.From(Date.StartOfWeek(Date.AddDays([Date],2))) - Number.From(Date.StartOfWeek(DateTime.LocalNow())))/7), Int64.Type),
+  MonthsAgo = Table.AddColumn(Custom, "Months Since Today", each ([Year] * 12 + [SortBy Month Number]) - (Date.Year(DateToday ) * 12 + Date.Month(DateToday )), Int64.Type),
+  YearsAgo = Table.AddColumn(MonthsAgo, "Years Since Today", each [Year] - Date.Year(DateToday ), Int64.Type),
+  #"Future Past Present" = Table.AddColumn(YearsAgo, "Future Past Present", each (if [Days Since Today] > 0  then "Future" else "Past and Present"), type text),
+  #"◀ Dates Since Today" = #"Future Past Present",
+  #"▶Financial Year Calcs" = #"◀ Dates Since Today",
+  #"FY Month Number" = Table.AddColumn(#"▶Financial Year Calcs", "SortBy Financial Month Number", each (if [SortBy Month Number] > MonthNumberForEndFinancialYear  then [SortBy Month Number]-MonthNumberForEndFinancialYear  else 12-MonthNumberForEndFinancialYear+[SortBy Month Number]), Int64.Type),
+  #"Financial Year End" = Table.AddColumn(#"FY Month Number", "Financial Year End", each (if [SortBy Financial Month Number] <=12-MonthNumberForEndFinancialYear  then [Year]+1 else [Year]), type number),
+  #"Financial Year Start" = Table.AddColumn(#"Financial Year End", "Financial Year Start", each [Financial Year End] - 1, type number),
+  #"Changed column type" = Table.TransformColumnTypes(#"Financial Year Start", {{"Financial Year End", type text}, {"Financial Year Start", type text}}),
+  #"Added Financial Year Range" = Table.AddColumn(#"Changed column type", "Financial Year", each Text.End( [Financial Year Start],2) & "-" & Text.End([Financial Year End],2)),
+  #"Removed FY Helpers" = Table.RemoveColumns(#"Added Financial Year Range", {"Financial Year End", "Financial Year Start"}),
+  // To work out Financial Quarter
+  #"DivideFinancialMonth by 3" = Table.AddColumn(#"Removed FY Helpers", "Financial Qtr Number", each [SortBy Financial Month Number] / 3, type number),
+  #"Rounded Up to get Quarter" = Table.TransformColumns(#"DivideFinancialMonth by 3",{{"Financial Qtr Number", Number.RoundUp, Int64.Type}}),
+  #"Added Financial Quarter" = Table.AddColumn(#"Rounded Up to get Quarter", "Financial Quarter", each "FQ-" & Text.From([Financial Qtr Number])),
+  #"Removed FYQ Helper" = Table.RemoveColumns(#"Added Financial Quarter", {"Financial Qtr Number"}),
+  #"Changed Type6" = Table.TransformColumnTypes(#"Removed FYQ Helper", {{"Financial Quarter", type text}, {"Financial Year", type text}}),
+  #"◀ Financial Year Calcs" = #"Changed Type6",
+  // If FY Month is set to 0 then Financial Year related columns will be excluded
+  LOADTHIS = if MonthNumberForEndFinancialYear = 0 then  #"◀ Dates Since Today" else #"◀ Financial Year Calcs",
+  #"Filtered rows" = Table.SelectRows(LOADTHIS, each [Future Past Present] = "Past and Present")
+in
+  #"Filtered rows"
