@@ -1,0 +1,9 @@
+= (StartDate as datetime, EndDate as datetime) as number =>
+
+let
+    DateList = List.DateTimes(StartDate, Number.From(EndDate) - Number.From(StartDate), #duration(1, 0, 0, 0)),
+    CompileWeekends = List.Select(DateList, each Date.DayOfWeek(_, Day.Saturday) < 2),
+    CountWeekendDays = Number.From(List.Count(CompileWeekends)),
+    AdjustedDateTime = (Double.From(EndDate) - Double.From(StartDate)) - Number.From(CountWeekendDays)
+in
+    AdjustedDateTime
