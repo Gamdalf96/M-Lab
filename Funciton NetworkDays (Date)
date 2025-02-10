@@ -1,0 +1,8 @@
+= (StartDate as date, EndDate as date) as number =>
+
+let
+    DateList = List.Dates(StartDate, Number.From(EndDate - StartDate), #duration(1, 0, 0, 0)),
+    RemoveWeekends = List.Select(DateList, each Date.DayOfWeek(_, Day.Monday) < 5),
+    CountDays = List.Count(RemoveWeekends)
+in
+    CountDays
