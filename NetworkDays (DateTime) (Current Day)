@@ -1,0 +1,17 @@
+Table.AddColumn(
+  Source, 
+  "ColumnName", each try Number.Round(
+    NetworkDatetime(
+      [CaseCreated], 
+      (
+        DateTime.From(
+          DateTimeZone.SwitchZone(
+            DateTimeZone.FixedUtcNow(),10
+          )
+        )
+      ) 
+    ), 
+  2
+  ) 
+otherwise 0, type number
+)
